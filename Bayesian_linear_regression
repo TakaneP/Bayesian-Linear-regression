@@ -1,0 +1,325 @@
+import sys
+import numpy as np
+import math
+from LSE_newton_method import get_LU,get_inv_column
+import matplotlib.pyplot as plt
+
+def transpose(m):
+	trans = []
+	for i in range(len(m[0])):
+		temp = []
+		for j in range(len(m)):
+			temp.append(m[j][i])
+		trans.append(temp)
+	return trans
+
+def matrix_mul(m1,m2):
+	if len(m1[0]) != len(m2):
+		print("matrix_mul dim error!")
+		sys.exit(1)
+
+	result = []
+	for i in range(len(m1)):
+		temp = []
+		for j in range(len(m2[0])):
+	 		sum = 0
+		 	for k in range(len(m2)):
+		 		sum = sum + m1[i][k] * m2[k][j]
+	 		
+		 	temp.append(sum)
+		result.append(temp)
+
+	return result
+
+
+def Univariate_gaussian_data_generator(mean,variance):
+	S = 0.0
+	while S >= 1.0 or S == 0.0:
+		U = np.random.random_sample() * 2 - 1
+		V = np.random.random_sample() * 2 - 1
+		S = U**2 + V**2
+
+	multiply = math.sqrt( (-2.0) * math.log(S) / S )
+	U = U * multiply
+	V = V * multiply
+
+	return mean + math.sqrt(variance) * U, mean +  math.sqrt(variance) * V
+
+def Polynomial_basis_linear_model_data_generator(basis,a,weight):
+	e,_ = Univariate_gaussian_data_generator(0,a)
+	x = -1.0
+	while x == -1.0:
+		x = np.random.random_sample() * 2 - 1
+	y = e
+	for i in range(basis):
+		y = y + weight[i][0] * x**i
+
+	return x,y
+
+def construct_X(data,basis):
+	list = [[]]
+	for i in range(basis):
+		list[0].append(data ** i)
+
+	return list
+
+def get_covariance(precision):
+	L,U = get_LU(precision)
+	invt = []
+	for i in range(len(L)):
+		invt.append(get_inv_column(L,U,i))
+
+	convariance = transpose(invt)
+
+	return convariance
+
+def Baysian_Linear_regression(b,basis,a,weight):
+	all_data_inputx = []
+	all_data_inputy = []
+	result_mean = []
+	result_variance = []
+	times_10_mean = []
+	times_10_variance = []
+	times_50_mean = []
+	times_50_variance = []
+
+	#convariance = [[0 for i in range(basis)] for i in range(basis)]
+	new_data,y = Polynomial_basis_linear_model_data_generator(basis,a,weight)
+	all_data_inputx.append(new_data)
+	all_data_inputy.append(y)
+	print("Add data point: (%.5f, %.5f)" %(new_data,y))
+	print('')
+	X = construct_X(new_data,basis)
+	X_t = transpose(X)
+
+	precision = matrix_mul(X_t,X)
+	for i in range(len(precision)):
+		for j in range(len(precision[0])):
+			precision[i][j] = precision[i][j] * a
+			if i == j:
+				precision[i][j] = precision[i][j] + b
+
+	convariance = get_covariance(precision)
+
+	y = matrix_mul(X,weight)[0][0]
+
+	
+	mean = matrix_mul(convariance,X_t)
+	print("Posterior mean:")
+	for i in range(len(mean)):
+		print(mean[i][0])
+
+	for i in range(len(mean)):
+		for j in range(len(mean[0])):
+			mean[i][j] = mean[i][j] * a * y
+	print('')
+	print("Posterior variance:")
+	for i in range(len(convariance)):
+		for j in range(len(convariance[i])):
+			print(convariance[i][j], end = '')
+			print("  ",end = '')
+		print('')
+
+	print('')
+	parameter1 = matrix_mul(X,mean)[0][0]
+	parameter2 = matrix_mul(X,convariance)
+	parameter2 = matrix_mul(parameter2,X_t)[0][0] + 1/a
+	print("Predictive distribution ~ N(%f,%f)" %(parameter1,parameter2))
+	
+	print('')
+	co = 1
+	while 1:
+		co = co + 1
+		prior_precison = precision
+		prior_mean = mean
+		new_data,y = Polynomial_basis_linear_model_data_generator(basis,a,weight)
+		print("Add data point: (%.5f, %.5f)" %(new_data,y))
+		print('')
+		all_data_inputx.append(new_data)
+		all_data_inputy.append(y)
+		X = construct_X(new_data,basis)
+		X_t = transpose(X)
+
+		precision = matrix_mul(X_t,X)
+		for i in range(len(precision)):
+			for j in range(len(precision[0])):
+				precision[i][j] = precision[i][j] * a + prior_precison[i][j]
+			
+		convariance = get_covariance(precision)
+
+
+		y = matrix_mul(X,weight)[0][0]
+
+		a_Xt_Y = X_t
+
+		for i in range(len(X_t)):
+			a_Xt_Y[i][0] = a_Xt_Y[i][0] * a * y
+
+
+		Sm = matrix_mul(prior_precison,prior_mean)
+
+		for i in range(len(X_t)):
+			Sm[i][0] = Sm[i][0] + a_Xt_Y[i][0]
+
+		
+		mean = matrix_mul(convariance,Sm)
+
+		print("Posterior mean:")
+		for i in range(len(mean)):
+			print(mean[i][0])
+
+		print('')
+		
+		print("Posterior variance:")
+		for i in range(len(convariance)):
+			for j in range(len(convariance[i])):
+				print(convariance[i][j], end = '')
+				print("  ",end = '')
+			print('')
+
+		print('')
+		parameter1 = matrix_mul(X,mean)[0][0]
+		parameter2 = matrix_mul(X,convariance)
+		parameter2 = matrix_mul(parameter2,X_t)[0][0] + 1/a
+		print("Predictive distribution ~ N(%f,%f)" %(parameter1,parameter2))
+		
+		print('')
+		if co == 10:
+			times_10_mean = mean
+			times_10_variance = convariance
+			
+		if co == 50:
+			times_50_mean = mean
+			times_50_variance = convariance
+		flag = 0
+		for i in range(basis):
+			if abs(mean[i][0]-prior_mean[i][0]) < 1e-5:
+				flag = flag + 1
+		if flag == basis - 1 and co > 100:
+			result_mean = mean
+			result_variance = convariance
+			break
+
+	plt.figure()
+	plt.subplot(2,2,1)
+	plt.title("Ground tuth")
+	plt.ylim(-10,20)
+	e,_ = Univariate_gaussian_data_generator(0,a)
+
+	x = np.linspace(-2,2,50)
+	y = x - x
+	for i in range(basis):
+		y = y + weight[i][0] * x ** i 
+	y1 = y + a
+	y2 = y - a
+	plt.plot(x,y,color = 'black')
+	plt.plot(x,y1,color = 'r')
+	plt.plot(x,y2,color = 'r')
+
+	plt.subplot(2,2,2)
+	plt.title("Predict result")
+	plt.ylim(-10,20)
+	y = x - x
+	var = []
+	for i in x:
+		X = construct_X(i,basis)
+		X_t = transpose(X)
+		var_now = matrix_mul(X,result_variance)
+		var_now = matrix_mul(var_now,X_t)[0][0] + 1/a
+		var.append(var_now)
+	y1 = y + var
+	y2 = y - var
+	for i in range(basis):
+		y = y + result_mean[i][0] * x ** i  
+		y1 = y1 + result_mean[i][0] * x ** i 
+		y2 = y2 + result_mean[i][0] * x ** i 
+	#y1 = y + result_variance1
+	#y2 = y - result_variance1
+	plt.plot(x,y,color = 'black')
+	plt.plot(x,y1,color = 'r')
+	plt.plot(x,y2,color = 'r')
+	plt.scatter(all_data_inputx,all_data_inputy)
+
+	tempx = []
+	tempy = []
+	for i in range(10):
+		tempx.append(all_data_inputx[i]) 
+		tempy.append(all_data_inputy[i]) 
+
+	plt.subplot(2,2,3)
+	plt.title("After 10 incomes")
+	plt.ylim(-10,20)
+	y = x - x
+	var = []
+	for i in x:
+		X = construct_X(i,basis)
+		X_t = transpose(X)
+		var_now = matrix_mul(X,times_10_variance)
+		var_now = matrix_mul(var_now,X_t)[0][0] + 1/a
+		var.append(var_now)
+	y1 = y + var
+	y2 = y - var
+	for i in range(basis):
+		y = y + times_10_mean[i][0] * x ** i  
+		y1 = y1 + times_10_mean[i][0] * x ** i 
+		y2 = y2 + times_10_mean[i][0] * x ** i 
+	#y1 = y + times_10_variance1
+	#y2 = y - times_10_variance1
+	plt.plot(x,y,color = 'black')
+	plt.plot(x,y1,color = 'r')
+	plt.plot(x,y2,color = 'r')
+	plt.scatter(tempx,tempy)
+
+	tempx = []
+	tempy = []
+	for i in range(50):
+		tempx.append(all_data_inputx[i]) 
+		tempy.append(all_data_inputy[i]) 
+
+	plt.subplot(2,2,4)
+	plt.title("After 50 incomes")
+	plt.ylim(-10,20)
+	y = x - x
+	var = []
+	for i in x:
+		X = construct_X(i,basis)
+		X_t = transpose(X)
+		var_now = matrix_mul(X,times_50_variance)
+		var_now = matrix_mul(var_now,X_t)[0][0] + 1/a
+		var.append(var_now)
+	y1 = y + var
+	y2 = y - var
+	for i in range(basis):
+		y = y + times_50_mean[i][0] * x ** i  
+		y1 = y1 + times_50_mean[i][0] * x ** i 
+		y2 = y2 + times_50_mean[i][0] * x ** i 
+	#y1 = y + times_50_variance1
+	#y2 = y - times_50_variance1
+	plt.plot(x,y,color = 'black')
+	plt.plot(x,y1,color = 'r')
+	plt.plot(x,y2,color = 'r')
+	plt.scatter(tempx,tempy)
+	plt.show()
+
+def main():
+	argument = sys.argv[1:]
+	if len(argument) != 4:
+		print("You should input all the arguments")
+		sys.exit(1)
+
+	b = int(argument[0])
+	basis = int(argument[1])
+	a = float(argument[2])
+	s = argument[3]
+	s = s.replace('[','')
+	s = s.replace(']','')
+	weight = []
+	for i in s.split(','):
+		weight.append([float(i)])
+	if len(weight) != basis:
+		print("You should input all the arguments")
+		sys.exit(1)
+	Baysian_Linear_regression(b,basis,a,weight)
+
+if __name__ == '__main__':
+	main()
